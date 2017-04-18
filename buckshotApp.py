@@ -15,6 +15,15 @@ from kivy.uix.textinput import TextInput
 from kivy.core.window import Window
 from kivy.uix.widget import Widget
 
+from kivy.adapters.dictadapter import DictAdapter
+from kivy.uix.selectableview import SelectableView
+from kivy.uix.listview import ListView, ListItemButton
+from kivy.adapters.listadapter import ListAdapter
+from kivy.adapters.models import SelectableDataItem
+from kivy.uix.gridlayout import GridLayout
+from kivy.lang import Builder
+from kivy.factory import Factory
+
 import xml.dom.minidom
 import regex as re
 from parse import *
@@ -25,7 +34,32 @@ import os
 
 exactMatchPrefix="*"
 closeMatchPrefix="+"
-       
+
+Factory.register('SelectableView', cls=SelectableView)
+Factory.register('ListItemButton', cls=ListItemButton)
+
+# from kivy/examples/widgets/lists/fixtures.py:
+# A dictionary of dicts, with only the minimum required is_selected attribute,
+# for use with examples using a simple list of integers in a list view.
+integers_dict = {str(i): {'text': str(i), 'is_selected': False}
+                 for i in range(100)}
+
+Builder.load_string('''
+[CustomListItem@SelectableView+BoxLayout]:
+    size_hint_y: ctx.size_hint_y
+    height: ctx.height
+    ListItemButton:
+        text: ctx.text
+        is_selected: ctx.is_selected
+''')
+ 
+
+class DataItem(SelectableDataItem):
+    def __init__(self, name, **kwargs):
+        self.name = name
+        super(DataItem, self).__init__(**kwargs)
+        
+              
 class BuckshotApp(App):
     def coordsChanged(self,*args):
         print("typing:"+self.coordsField.text)
@@ -414,6 +448,23 @@ class BuckshotApp(App):
 #         self.ui.DMSsField.clear()
 #         self.ui.DMSsField.addItems(self.coordDMSsStringList)
 
+        # list view modification code taken from
+        #  kivy/examples/lists/list_reset_data.py
+#         if self.coordDdStringList!=[]:
+        self.list_adapter.data=[]
+        for DdString in self.coordDdStringList:
+            item=DataItem(name=DdString)
+            self.list_adapter.data.append(item)
+#         if self.coordDMmStringList!=[]:
+        for DMmString in self.coordDMmStringList:
+            item=DataItem(name=DMmString)
+            self.list_adapter.data.append(item)
+#         if self.coordDMSsStringList!=[]:
+        for DMSsString in self.coordDMSsStringList:
+            item=DataItem(name=DMSsString)
+            self.list_adapter.data.append(item)
+            
+
         print("Possible Dd coordinates:\n"+str(self.coordDdStringList))
         print("Possible DMm coordinates:\n"+str(self.coordDMmStringList))
         print("Possible DMSs coordinates:\n"+str(self.coordDMSsStringList))
@@ -616,6 +667,12 @@ class BuckshotApp(App):
 
 # end copy-and-modify-as-needed from buckshot.py 4-16-17
 
+    def selectionChanged(self,*args):
+        if len(self.list_adapter.selection)>0:
+            self.bestMatch=self.list_adapter.selection[0].text
+        else:
+            self.bestMatch=""
+        print("Selection changed.  New best match:"+self.bestMatch)
         
     def build(self):
         # these statements could go in __init__:
@@ -625,6 +682,8 @@ class BuckshotApp(App):
         self.coordDMSsStringList=[]
         self.bestMatch=""
         
+        data_items=[]
+        
         layout=BoxLayout(orientation='vertical')
         self.coordsField=TextInput(text='Coordinates (numbers only)',multiline=False)
         self.coordsField.bind(text=self.coordsChanged)
@@ -633,6 +692,46 @@ class BuckshotApp(App):
         goButton.bind(on_press=self.createMarkers)
         layout.add_widget(goButton)
 
+#         self.list_item_args_converter = \
+#                 lambda row_index, rec: {'text': rec['text'],
+#                                         'is_selected': rec['is_selected'],
+#                                         'size_hint_y': None,
+#                                         'height': 25}
+# 
+#         # Here we create a dict adapter with 1..100 integer strings as
+#         # sorted_keys, and integers_dict from fixtures as data, passing our
+#         # CompositeListItem kv template for the list item view. Then we
+#         # create a list view using this adapter. args_converter above converts
+#         # dict attributes to ctx attributes.
+#         self.dict_adapter = DictAdapter(sorted_keys=[str(i) for i in range(100)],
+#                                    data=integers_dict,
+#                                    args_converter=self.list_item_args_converter,
+#                                    template='CustomListItem')
+# 
+#         self.list_view = ListView(adapter=self.dict_adapter)
+# 
+#         layout.add_widget(list_view)
+#         
+        
+        # copied from list_reset_data.py: uses ListAdapter instead of DictAdapter
+        list_item_args_converter = lambda row_index, obj: {'text': obj.name,
+                                                           'size_hint_y': None,
+                                                           'height': 25}
+
+        self.list_adapter = \
+                ListAdapter(data=data_items,
+                            args_converter=list_item_args_converter,
+                            selection_mode='single',
+                            propagate_selection_to_data=False,
+                            allow_empty_selection=True,
+                            cls=ListItemButton)
+
+        self.list_adapter.bind(on_selection_change=self.selectionChanged)
+        
+        self.list_view = ListView(adapter=self.list_adapter)
+
+#         self.add_widget(self.list_view)
+        layout.add_widget(self.list_view)
 
         return layout
     
