@@ -44,14 +44,38 @@ Factory.register('ListItemButton', cls=ListItemButton)
 integers_dict = {str(i): {'text': str(i), 'is_selected': False}
                  for i in range(100)}
 
-Builder.load_string('''
-[CustomListItem@SelectableView+BoxLayout]:
-    size_hint_y: ctx.size_hint_y
-    height: ctx.height
-    ListItemButton:
-        text: ctx.text
-        is_selected: ctx.is_selected
-''')
+# Builder.load_string('''
+# [CustomListItem@SelectableView+BoxLayout]:
+# #     size_hint_y: ctx.size_hint_y
+# #     height: ctx.height
+# #     ListItemButton:
+# #         text: ctx.text
+# #         is_selected: ctx.is_selected
+#     BoxLayout:
+#         orientation: "vertical"
+#         Label:
+#             id: coordsEntryField
+#             size_hint_y: 0.15
+#             markup: True
+#             text: "Coords"
+#             halign: "left"
+#         Label:
+#             id: labelField
+#             text: "Enter or paste original 'coordinates' here.  Any non-digit characters will be ignored."
+#         BoxLayout:
+#             id: buttonBoxLayout
+#             orientation: "horizontal"
+#             Button:
+#                 text: "View List"
+#                 on_release: root.manager.viewList
+#             Button:
+#                 text: "Map It"
+#                 on_release: root.manager.mapIt
+#             Widget:
+#                 # placeholder for the keypad
+#                 size_hint_y: 0.5
+#     
+# ''')
  
 
 class DataItem(SelectableDataItem):
@@ -59,7 +83,7 @@ class DataItem(SelectableDataItem):
         self.name = name
         super(DataItem, self).__init__(**kwargs)
         
-              
+  
 class BuckshotApp(App):
     def coordsChanged(self,*args):
         print("typing:"+self.coordsField.text)
@@ -85,6 +109,158 @@ class BuckshotApp(App):
             return False
         else:
             return f
+        
+    def createMarkers(self,*args):
+        print("createMarkers called")
+        
+        # if a gpx filename is specified, validate it first; if invalid, force
+        #  the user to fix it or blank it out before generating any URL markers
+
+#         if not self.fnameValidate(self.ui.gpxFileNameField.text()):
+        if not self.fnameValidate(self.gpxFileName):
+            return
+            
+        DdIdx=0
+        DMmIdx=0
+        DMSsIdx=0
+        DdIdxFlag=len(self.coordDdStringList)>1
+        DMmIdxFlag=len(self.coordDMmStringList)>1
+        DMSsIdxFlag=len(self.coordDMSsStringList)>1
+
+#         markerName=self.ui.markerNameField.text()
+        markerName="buckshotAppTest"
+        if markerName=="":
+            markerName="X"
+
+        # for exact match, use a ring with center dot
+        # for close match, use a hollow ring
+        # appropriate prefixes were determined from decoding json POST request
+        #  of a live header when creating each type of marker by hand
+        # final URL values:
+        #  simple dot: "#<hex_color>"
+        #  target: "c:target,<hex_color>" (notice, no pound sign)
+        #  ring: "c:ring,<hex_color>" (notice, no pound sign)
+        exactUrlPrefix="c:target,"
+        closeUrlPrefix="c:ring,"
+
+        # build a list of markers; each marker is a list:
+        # [markerName,lat,lon,color]
+        markerList=[]
+        for DdString in self.coordDdStringList:
+            DdIdx=DdIdx+1
+            prefix=""
+            urlPrefix="#"
+#             if DdString.startswith(exactMatchPrefix):
+            if DdString==self.bestMatch:
+                DdString=DdString.replace(exactMatchPrefix,"")
+                prefix=exactMatchPrefix
+                urlPrefix=exactUrlPrefix
+            if DdString.startswith(closeMatchPrefix):
+                DdString=DdString.replace(closeMatchPrefix,"")
+                prefix=closeMatchPrefix
+                urlPrefix=closeUrlPrefix
+            print("  Dd : '"+DdString+"'")
+            r=parse("{:g}deg N x {:g}deg W",DdString)
+            print(r)
+            if DdIdxFlag:
+                idx=str(DdIdx)
+            else:
+                idx=""
+            markerList.append([prefix+markerName+"_Dd"+idx,r[0],-r[1],urlPrefix+"FF0000"])
+        for DMmString in self.coordDMmStringList:
+            DMmIdx=DMmIdx+1
+            prefix=""
+            urlPrefix="#"
+#             if DMmString.startswith(exactMatchPrefix):
+            if DMmString==self.bestMatch:
+                DMmString=DMmString.replace(exactMatchPrefix,"")
+                prefix=exactMatchPrefix
+                urlPrefix=exactUrlPrefix
+            if DMmString.startswith(closeMatchPrefix):
+                DMmString=DMmString.replace(closeMatchPrefix,"")
+                prefix=closeMatchPrefix
+                urlPrefix=closeUrlPrefix
+            print("  DMm : "+DMmString)
+            r=parse("{:g}deg {:g}min N x {:g}deg {:g}min W",DMmString)
+            print(r)
+            if DMmIdxFlag:
+                idx=str(DMmIdx)
+            else:
+                idx=""
+            markerList.append([prefix+markerName+"_DMm"+idx,r[0]+r[1]/60.0,-(r[2]+r[3]/60.0),urlPrefix+"FF00FF"])
+        for DMSsString in self.coordDMSsStringList:
+            DMSsIdx=DMSsIdx+1
+            prefix=""
+            urlPrefix="#"
+#             if DMSsString.startswith(exactMatchPrefix):
+            if DMSsString==self.bestMatch:
+                DMSsString=DMSsString.replace(exactMatchPrefix,"")
+                prefix=exactMatchPrefix
+                urlPrefix=exactUrlPrefix
+            if DMSsString.startswith(closeMatchPrefix):
+                DMSsString=DMSsString.replace(closeMatchPrefix,"")
+                prefix=closeMatchPrefix
+                urlPrefix=closeUrlPrefix
+            print("  DMSs: "+DMSsString)
+            r=parse("{:g}deg {:g}min {:g}sec N x {:g}deg {:g}min {:g}sec W",DMSsString)
+            print(r)
+            if DMSsIdxFlag:
+                idx=str(DMSsIdx)
+            else:
+                idx=""
+            markerList.append([prefix+markerName+"_DMSs"+idx,r[0]+r[1]/60.0+r[2]/3600.0,-(r[3]+r[4]/60.0+r[5]/3600.0),urlPrefix+"0000FF"])
+
+        print("Final marker list:")
+        print(str(markerList))
+
+        if self.writeGPX(markerList):
+            infoStr="\nWrote GPX?   YES"
+        else:
+            infoStr="\nWrote GPX?   NO"
+
+#         if self.ui.URLField.text():
+#             # the domain and port is defined as the URL up to and including the first slash
+#             #  after the http:// if it exists, or just the first slash otherwise
+#             url=self.ui.URLField.text()
+#             domainAndPort=url.lower().replace("http://","").split("/")[0]
+#             print("domainAndPort: "+domainAndPort)
+#             s=requests.session()
+#             try:
+#                 s.get(url)
+#             except:
+#                 QMessageBox.warning(self,"URL Failed","Could not communicate with the specfied URL.  Fix it or blank it out, and try again.")
+#                 infoStr+="\nWrote URL?   NO"
+#             else:
+#                 postErr=""
+#                 for marker in markerList:
+#                     if postErr=="":
+#                         j={}
+#                         j['label']=marker[0]
+#                         j['folderId']=None
+#                         j['url']=marker[3]
+#                         j['comments']=""
+#                         if marker[0].startswith(exactMatchPrefix):
+#                             j['comments']="User-selected best match!"
+#                         if marker[0].startswith(closeMatchPrefix):
+#                             j['comments']="CLOSE match for specified coordinates"
+#                         j['position']={"lat":marker[1],"lng":marker[2]}
+#                         try:
+#                             r=s.post("http://"+domainAndPort+"/rest/marker/",data={'json':json.dumps(j)})
+#                         except requests.exceptions.RequestException as err:
+#                             postErr=err
+#                         else:
+#                             print("DUMP:")
+#                             print(json.dumps(j))
+#                 if postErr=="":
+#                     infoStr+="\nWrote URL?   YES"
+#                 else:
+#                     infoStr+="\nWrote URL?   NO"
+#                     QMessageBox.warning(self,"URL Post Request Failed","URL POST request failed:\n\n"+str(postErr)+"\n\nNo markers written to URL.  Fix or blank out the URL field, and try again.")
+#         else:
+#             infoStr+="\nWrote URL?   NO"
+#             print("No URL specified; skipping URL export.")
+#             
+#         QMessageBox.information(self,"Markers Created","Markers created successfully.\n"+infoStr)
         
     def writeGPX(self,markerList):
 #         gpxFileName=self.ui.gpxFileNameField.text()
@@ -512,160 +688,35 @@ class BuckshotApp(App):
 #                 self.ui.DMSsField.addItems(self.coordDMSsStringList)
 
 #     def createMarkers(self):
-    def createMarkers(self,*args):
-        print("createMarkers called")
-        
-        # if a gpx filename is specified, validate it first; if invalid, force
-        #  the user to fix it or blank it out before generating any URL markers
 
-#         if not self.fnameValidate(self.ui.gpxFileNameField.text()):
-        if not self.fnameValidate(self.gpxFileName):
-            return
-            
-        DdIdx=0
-        DMmIdx=0
-        DMSsIdx=0
-        DdIdxFlag=len(self.coordDdStringList)>1
-        DMmIdxFlag=len(self.coordDMmStringList)>1
-        DMSsIdxFlag=len(self.coordDMSsStringList)>1
-
-#         markerName=self.ui.markerNameField.text()
-        markerName="buckshotAppTest"
-        if markerName=="":
-            markerName="X"
-
-        # for exact match, use a ring with center dot
-        # for close match, use a hollow ring
-        # appropriate prefixes were determined from decoding json POST request
-        #  of a live header when creating each type of marker by hand
-        # final URL values:
-        #  simple dot: "#<hex_color>"
-        #  target: "c:target,<hex_color>" (notice, no pound sign)
-        #  ring: "c:ring,<hex_color>" (notice, no pound sign)
-        exactUrlPrefix="c:target,"
-        closeUrlPrefix="c:ring,"
-
-        # build a list of markers; each marker is a list:
-        # [markerName,lat,lon,color]
-        markerList=[]
-        for DdString in self.coordDdStringList:
-            DdIdx=DdIdx+1
-            prefix=""
-            urlPrefix="#"
-#             if DdString.startswith(exactMatchPrefix):
-            if DdString==self.bestMatch:
-                DdString=DdString.replace(exactMatchPrefix,"")
-                prefix=exactMatchPrefix
-                urlPrefix=exactUrlPrefix
-            if DdString.startswith(closeMatchPrefix):
-                DdString=DdString.replace(closeMatchPrefix,"")
-                prefix=closeMatchPrefix
-                urlPrefix=closeUrlPrefix
-            print("  Dd : '"+DdString+"'")
-            r=parse("{:g}deg N x {:g}deg W",DdString)
-            print(r)
-            if DdIdxFlag:
-                idx=str(DdIdx)
-            else:
-                idx=""
-            markerList.append([prefix+markerName+"_Dd"+idx,r[0],-r[1],urlPrefix+"FF0000"])
-        for DMmString in self.coordDMmStringList:
-            DMmIdx=DMmIdx+1
-            prefix=""
-            urlPrefix="#"
-#             if DMmString.startswith(exactMatchPrefix):
-            if DMmString==self.bestMatch:
-                DMmString=DMmString.replace(exactMatchPrefix,"")
-                prefix=exactMatchPrefix
-                urlPrefix=exactUrlPrefix
-            if DMmString.startswith(closeMatchPrefix):
-                DMmString=DMmString.replace(closeMatchPrefix,"")
-                prefix=closeMatchPrefix
-                urlPrefix=closeUrlPrefix
-            print("  DMm : "+DMmString)
-            r=parse("{:g}deg {:g}min N x {:g}deg {:g}min W",DMmString)
-            print(r)
-            if DMmIdxFlag:
-                idx=str(DMmIdx)
-            else:
-                idx=""
-            markerList.append([prefix+markerName+"_DMm"+idx,r[0]+r[1]/60.0,-(r[2]+r[3]/60.0),urlPrefix+"FF00FF"])
-        for DMSsString in self.coordDMSsStringList:
-            DMSsIdx=DMSsIdx+1
-            prefix=""
-            urlPrefix="#"
-#             if DMSsString.startswith(exactMatchPrefix):
-            if DMSsString==self.bestMatch:
-                DMSsString=DMSsString.replace(exactMatchPrefix,"")
-                prefix=exactMatchPrefix
-                urlPrefix=exactUrlPrefix
-            if DMSsString.startswith(closeMatchPrefix):
-                DMSsString=DMSsString.replace(closeMatchPrefix,"")
-                prefix=closeMatchPrefix
-                urlPrefix=closeUrlPrefix
-            print("  DMSs: "+DMSsString)
-            r=parse("{:g}deg {:g}min {:g}sec N x {:g}deg {:g}min {:g}sec W",DMSsString)
-            print(r)
-            if DMSsIdxFlag:
-                idx=str(DMSsIdx)
-            else:
-                idx=""
-            markerList.append([prefix+markerName+"_DMSs"+idx,r[0]+r[1]/60.0+r[2]/3600.0,-(r[3]+r[4]/60.0+r[5]/3600.0),urlPrefix+"0000FF"])
-
-        print("Final marker list:")
-        print(str(markerList))
-
-        if self.writeGPX(markerList):
-            infoStr="\nWrote GPX?   YES"
+    def viewSwitch(self,*args):
+        # note, the keyboard (if shown) is NOT a member of self.layout.children
+        if self.vkeyboard:
+            self.showList()
+            self.viewSwitchButton.text="Show Keyboard"
         else:
-            infoStr="\nWrote GPX?   NO"
-
-#         if self.ui.URLField.text():
-#             # the domain and port is defined as the URL up to and including the first slash
-#             #  after the http:// if it exists, or just the first slash otherwise
-#             url=self.ui.URLField.text()
-#             domainAndPort=url.lower().replace("http://","").split("/")[0]
-#             print("domainAndPort: "+domainAndPort)
-#             s=requests.session()
-#             try:
-#                 s.get(url)
-#             except:
-#                 QMessageBox.warning(self,"URL Failed","Could not communicate with the specfied URL.  Fix it or blank it out, and try again.")
-#                 infoStr+="\nWrote URL?   NO"
-#             else:
-#                 postErr=""
-#                 for marker in markerList:
-#                     if postErr=="":
-#                         j={}
-#                         j['label']=marker[0]
-#                         j['folderId']=None
-#                         j['url']=marker[3]
-#                         j['comments']=""
-#                         if marker[0].startswith(exactMatchPrefix):
-#                             j['comments']="User-selected best match!"
-#                         if marker[0].startswith(closeMatchPrefix):
-#                             j['comments']="CLOSE match for specified coordinates"
-#                         j['position']={"lat":marker[1],"lng":marker[2]}
-#                         try:
-#                             r=s.post("http://"+domainAndPort+"/rest/marker/",data={'json':json.dumps(j)})
-#                         except requests.exceptions.RequestException as err:
-#                             postErr=err
-#                         else:
-#                             print("DUMP:")
-#                             print(json.dumps(j))
-#                 if postErr=="":
-#                     infoStr+="\nWrote URL?   YES"
-#                 else:
-#                     infoStr+="\nWrote URL?   NO"
-#                     QMessageBox.warning(self,"URL Post Request Failed","URL POST request failed:\n\n"+str(postErr)+"\n\nNo markers written to URL.  Fix or blank out the URL field, and try again.")
-#         else:
-#             infoStr+="\nWrote URL?   NO"
-#             print("No URL specified; skipping URL export.")
-#             
-#         QMessageBox.information(self,"Markers Created","Markers created successfully.\n"+infoStr)
-
-
-# end copy-and-modify-as-needed from buckshot.py 4-16-17
+            self.showKeyboard()
+            self.viewSwitchButton.text="Show List"
+        
+    def showKeyboard(self):
+        self.layout.remove_widget(self.list_view)
+        self.layout.add_widget(self.bottom)
+        keyboard=Window.request_keyboard(self._keyboard_close,self)
+        keyboard.widget.size_hint_y=0.5
+        if keyboard.widget:
+            self.vkeyboard=keyboard.widget
+            self.vkeyboard.layout='numeric.json'
+            # note, any entry that has non-'null' second element will not trigger on_key_down 
+        else:
+            self.vkeyboard=keyboard       
+        self.vkeyboard.bind(on_key_down=self.key_down)
+     
+    def showList(self):
+        self.vkeyboard.unbind(on_key_down=self.key_down)
+        Window.release_all_keyboards()
+        self.vkeyboard=None
+        self.layout.remove_widget(self.bottom)
+        self.layout.add_widget(self.list_view)
 
     def selectionChanged(self,*args):
         if len(self.list_adapter.selection)>0:
@@ -673,7 +724,20 @@ class BuckshotApp(App):
         else:
             self.bestMatch=""
         print("Selection changed.  New best match:"+self.bestMatch)
-        
+ 
+    def key_down(self,keyboard,keycode,*args):
+        print("key pressed")
+        if isinstance(keycode,tuple):
+            keycode=keycode[1]
+        if keycode=="backspace":
+            self.coordsEntered=self.coordsEntered[0:len(self.coordsEntered)-1]
+        else:
+            self.coordsEntered+=format(keycode)
+        return True
+    
+    def _keyboard_close(self,*args):
+        pass
+       
     def build(self):
         # these statements could go in __init__:
         self.gpxFileName="C:\\Users\\caver\\Downloads\\buckshotApp.gpx"
@@ -682,16 +746,43 @@ class BuckshotApp(App):
         self.coordDMSsStringList=[]
         self.bestMatch=""
         
+        self.coordsEntered=""
+        
         data_items=[]
         
-        layout=BoxLayout(orientation='vertical')
-        self.coordsField=TextInput(text='Coordinates (numbers only)',multiline=False)
+        self.layout=BoxLayout(orientation='vertical')
+        self.coordsField=TextInput(hint_text='Coordinates',
+                multiline=False,font_size='48pt',size_hint=(1,0.2),
+                hint_text_color=(1,1,1,0.5))
         self.coordsField.bind(text=self.coordsChanged)
-        layout.add_widget(self.coordsField)
+        self.layout.add_widget(self.coordsField)
+        
+        buttonsLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.2))
+        self.viewSwitchButton=Button(text='View List')
+        self.viewSwitchButton.bind(on_press=self.viewSwitch)
+        buttonsLayout.add_widget(self.viewSwitchButton)
         goButton=Button(text='Create Markers',font_size=24)
         goButton.bind(on_press=self.createMarkers)
-        layout.add_widget(goButton)
+        buttonsLayout.add_widget(goButton)
+        self.layout.add_widget(buttonsLayout)
+        
+        # 'bottom' is either a placeholder for the keyboard, or the list
+        self.bottom=Widget(size_hint_y=0.65)
+#         self.layout.add_widget(self.bottom)
+        
+        self.vkeyboard=None
 
+        
+#         keyboard=Window.request_keyboard(self._keyboard_close,self,'number')
+#         keyboard.widget.size_hint_y=0.5
+#         if keyboard.widget:
+#             self.vkeyboard=keyboard.widget
+#             self.vkeyboard.layout='numeric.json'
+#         else:
+#             self.vkeyboard=keyboard
+#         
+#         self.vkeyboard.bind(on_key_down=self.key_down)
+        
 #         self.list_item_args_converter = \
 #                 lambda row_index, rec: {'text': rec['text'],
 #                                         'is_selected': rec['is_selected'],
@@ -717,7 +808,7 @@ class BuckshotApp(App):
         list_item_args_converter = lambda row_index, obj: {'text': obj.name,
                                                            'size_hint_y': None,
                                                            'height': 25}
-
+ 
         self.list_adapter = \
                 ListAdapter(data=data_items,
                             args_converter=list_item_args_converter,
@@ -725,15 +816,17 @@ class BuckshotApp(App):
                             propagate_selection_to_data=False,
                             allow_empty_selection=True,
                             cls=ListItemButton)
-
+ 
         self.list_adapter.bind(on_selection_change=self.selectionChanged)
-        
-        self.list_view = ListView(adapter=self.list_adapter)
-
+         
+        self.list_view = ListView(adapter=self.list_adapter,size_hint_y=0.65)
+ 
 #         self.add_widget(self.list_view)
-        layout.add_widget(self.list_view)
+        self.layout.add_widget(self.list_view)
 
-        return layout
+        self.showKeyboard()
+        
+        return self.layout
     
         
 if __name__ == '__main__':
