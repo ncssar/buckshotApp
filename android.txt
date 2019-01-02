@@ -1,0 +1,3 @@
+title=Buckshot
+author=Tom Grundy
+orientation=portrait
